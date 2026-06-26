@@ -301,7 +301,7 @@ Pre-configured Grafana dashboard templates in `monitoring/grafana/`.
 
 **Bank of India Hackathon 2026** at **Indian Institute of Technology Hyderabad**
 
-Team: [Your Team Name]
+Team: [Yoodha]
 
 MuleShield AI addresses the critical challenge of mule account detection in India's public banking sector — combining ensemble ML, explainable AI, and regulatory compliance into a production-ready fraud prevention platform.
 
