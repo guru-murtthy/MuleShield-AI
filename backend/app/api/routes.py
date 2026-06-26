@@ -162,9 +162,8 @@ def score_account(request: ScoreRequest, db: Session = Depends(get_db)):
         account_id=account_id,
         risk_score=risk_score,
         risk_band=risk_band,
-        ensemble_probability=prob,
-        detection_patterns=[{"pattern": p.pattern, "confidence": p.confidence} for p in top_patterns],
-        shap_features=[{"name": f.name, "shap_value": f.shap_value, "direction": f.direction} for f in shap_features_raw],
+        patterns=[{"pattern": p.pattern, "confidence": p.confidence} for p in top_patterns],
+        shap_values=[{"name": f.name, "shap_value": f.shap_value, "direction": f.direction} for f in shap_features_raw],
         narrative=narrative,
         auto_freeze_eligible=auto_freeze,
         model_version=ensemble.model_version,
@@ -179,7 +178,7 @@ def score_account(request: ScoreRequest, db: Session = Depends(get_db)):
         account_id=account_id,
         risk_score=risk_score,
         model_version=ensemble.model_version,
-        details={"risk_band": risk_band, "auto_freeze_eligible": auto_freeze},
+        metadata={"risk_band": risk_band, "auto_freeze_eligible": auto_freeze},
     )
 
     # Auto-freeze for CRITICAL (if kill switch is off)
@@ -188,7 +187,7 @@ def score_account(request: ScoreRequest, db: Session = Depends(get_db)):
         audit_service.write_audit_event(
             db, event_type="str_generated",
             account_id=account_id, risk_score=risk_score,
-            details={"str_type": "goAML"},
+            metadata={"str_type": "goAML"},
         )
 
     _set_cache(account_id, response)
@@ -218,9 +217,9 @@ def get_alerts(
     items = []
     for r in records:
         top_pattern = None
-        if r.detection_patterns:
+        if r.patterns:
             try:
-                patterns = r.detection_patterns
+                patterns = r.patterns
                 top_pattern = patterns[0]["pattern"] if patterns else None
             except Exception:
                 pass
@@ -230,7 +229,7 @@ def get_alerts(
             risk_band=r.risk_band,
             top_pattern=top_pattern,
             auto_freeze_eligible=r.auto_freeze_eligible or False,
-            scored_at=r.created_at,
+            scored_at=r.timestamp,
         ))
 
     return AlertsResponse(
@@ -328,7 +327,7 @@ def get_audit_log(
             user_id=r.user_id,
             timestamp=r.timestamp,
             risk_score=r.risk_score,
-            record_hash=r.record_hash,
+            record_hash=r.current_hash,
         )
         for r in records
     ]

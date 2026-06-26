@@ -14,13 +14,12 @@ class ScoreRecord(Base):
     account_id = Column(String(64), index=True, nullable=False)
     risk_score = Column(Integer, nullable=False)
     risk_band = Column(String(16), nullable=False)
-    ensemble_probability = Column(Float, nullable=False)
-    detection_patterns = Column(JSON, nullable=True)
-    shap_features = Column(JSON, nullable=True)
+    patterns = Column(JSON, nullable=True)  # top-3 Detection_Patterns
+    shap_values = Column(JSON, nullable=True)  # top-10 SHAP attributions
     narrative = Column(Text, nullable=True)
     auto_freeze_eligible = Column(Boolean, default=False)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     model_version = Column(String(64), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class AccountAction(Base):
@@ -29,10 +28,9 @@ class AccountAction(Base):
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(String(64), index=True, nullable=False)
     action_type = Column(String(32), nullable=False)  # soft_freeze, hard_freeze, unfreeze, fund_trace
-    status = Column(String(16), nullable=False)  # active, removed
-    analyst_id = Column(String(64), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    user_id = Column(String(64), nullable=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    status = Column(String(16), nullable=False)  # applied, reversed
 
 
 class AuditLog(Base):
@@ -45,9 +43,9 @@ class AuditLog(Base):
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     model_version = Column(String(64), nullable=True)
     risk_score = Column(Integer, nullable=True)
-    details = Column(JSON, nullable=True)
-    record_hash = Column(String(64), nullable=True)  # SHA-256 chain hash
-    prev_hash = Column(String(64), nullable=True)
+    metadata = Column(JSON, nullable=True)
+    previous_hash = Column(String(64), nullable=True)  # SHA-256 of previous record
+    current_hash = Column(String(64), nullable=True)  # SHA-256(previous_hash || event_type || timestamp || account_id)
 
     def compute_hash(self) -> str:
         """Compute SHA-256 hash of this record for audit chain."""
@@ -59,6 +57,6 @@ class AuditLog(Base):
             "timestamp": str(self.timestamp),
             "model_version": self.model_version,
             "risk_score": self.risk_score,
-            "prev_hash": self.prev_hash,
+            "previous_hash": self.previous_hash,
         }, sort_keys=True)
         return hashlib.sha256(payload.encode()).hexdigest()

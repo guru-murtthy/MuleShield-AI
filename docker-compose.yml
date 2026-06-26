@@ -1,0 +1,305 @@
+services:
+  # ============================================================================
+  # INIT CONTAINER: Model Training
+  # ============================================================================
+  # Runs training pipeline before backend starts (only if models don't exist)
+  train-models:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: muleshield-train
+    command: >
+      sh -c "
+        if [ ! -f /app/artifacts/ensemble_meta.pkl ]; then
+          echo '=== Training models (first run) ===';
+          python scripts/train.py --data /data/DataSet.csv --artifacts /app/artifacts --mlflow-uri http://mlflow:5000;
+        else
+          echo '=== Models already exist, skipping training ===';
+        fi
+      "
+    volumes:
+      - ./data:/data:ro
+      - model-artifacts:/app/artifacts
+      - ./backend:/app
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - XGBOOST_WEIGHT=0.30
+      - LIGHTGBM_WEIGHT=0.25
+      - CATBOOST_WEIGHT=0.15
+      - ISOLATION_FOREST_WEIGHT=0.15
+      - AUTOENCODER_WEIGHT=0.10
+      - GNN_WEIGHT=0.05
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    networks:
+      - muleshield-network
+    restart: "no"
+
+  # ============================================================================
+  # BACKEND: FastAPI Scoring API
+  # ============================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: muleshield-backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data:ro
+      - model-artifacts:/app/artifacts
+      - ./backend:/app
+      - sqlite-data:/app/db
+    environment:
+      - DATABASE_URL=sqlite:///./db/muleshield.db
+      - REDIS_URL=redis://redis:6379/0
+      - MODEL_ARTIFACTS_DIR=/app/artifacts
+      - DATASET_PATH=/data/DataSet.csv
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - XGBOOST_WEIGHT=0.30
+      - LIGHTGBM_WEIGHT=0.25
+      - CATBOOST_WEIGHT=0.15
+      - ISOLATION_FOREST_WEIGHT=0.15
+      - AUTOENCODER_WEIGHT=0.10
+      - GNN_WEIGHT=0.05
+      - SCORE_CACHE_TTL=60
+      - DB_POOL_SIZE=10
+      - DB_MAX_OVERFLOW=20
+      - API_WORKERS=4
+      - REGULATOR_TOKEN=regulator-secret-token
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+      - KILL_SWITCH_ACTIVE=False
+      - AUTO_FREEZE_ENABLED=True
+      - STR_GENERATION_ENABLED=True
+      - DEBUG=False
+      - PROMETHEUS_ENABLED=True
+      - AUDIT_RETENTION_DAYS=1825
+      - PATTERN_CONFIDENCE_THRESHOLD=0.20
+      - SHAP_TOP_N_FEATURES=10
+      - NARRATIVE_TOP_N_FEATURES=3
+    depends_on:
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+      train-models:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - muleshield-network
+    restart: unless-stopped
+
+  # ============================================================================
+  # FRONTEND: React + Vite served via Nginx
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=http://localhost:8000/api/v1
+    container_name: muleshield-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - muleshield-network
+    restart: unless-stopped
+
+  # ============================================================================
+  # REDIS: Feature Store Cache
+  # ============================================================================
+  redis:
+    image: redis:7.2-alpine
+    container_name: muleshield-redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - muleshield-network
+    restart: unless-stopped
+
+  # ============================================================================
+  # NEO4J: Transaction Graph Database
+  # ============================================================================
+  neo4j:
+    image: neo4j:5.20-community
+    container_name: muleshield-neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+      - neo4j-import:/var/lib/neo4j/import
+      - neo4j-plugins:/plugins
+    environment:
+      - NEO4J_AUTH=neo4j/muleshield123
+      - NEO4J_dbms_memory_pagecache_size=512M
+      - NEO4J_dbms_memory_heap_initial__size=512M
+      - NEO4J_dbms_memory_heap_max__size=1G
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - muleshield-network
+    restart: unless-stopped
+
+  # ============================================================================
+  # MLFLOW: Model Registry and Experiment Tracking
+  # ============================================================================
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.14.1
+    container_name: muleshield-mlflow
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-data:/mlflow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - muleshield-network
+    restart: unless-stopped
+
+  # ============================================================================
+  # PROMETHEUS: Metrics Collection
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: muleshield-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - muleshield-network
+    restart: unless-stopped
+
+  # ============================================================================
+  # GRAFANA: Metrics Visualization Dashboard
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:10.4.3
+    container_name: muleshield-grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SERVER_ROOT_URL=http://localhost:3001
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - muleshield-network
+    restart: unless-stopped
+
+# ============================================================================
+# NETWORKS
+# ============================================================================
+networks:
+  muleshield-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ============================================================================
+# VOLUMES
+# ============================================================================
+volumes:
+  # Data persistence
+  model-artifacts:
+    driver: local
+  sqlite-data:
+    driver: local
+  redis-data:
+    driver: local
+  
+  # Neo4j persistence
+  neo4j-data:
+    driver: local
+  neo4j-logs:
+    driver: local
+  neo4j-import:
+    driver: local
+  neo4j-plugins:
+    driver: local
+  
+  # MLflow persistence
+  mlflow-data:
+    driver: local
+  
+  # Monitoring persistence
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local

@@ -18,7 +18,7 @@ def _ensure_init(db: Session):
     if not _initialized:
         prev = db.query(AuditLog).order_by(AuditLog.id.desc()).first()
         if prev:
-            _in_memory_prev_hash = prev.record_hash or "genesis"
+            _in_memory_prev_hash = prev.current_hash or "genesis"
         _initialized = True
 
 
@@ -29,7 +29,7 @@ def write_audit_event(
     user_id: Optional[str] = None,
     model_version: Optional[str] = None,
     risk_score: Optional[int] = None,
-    details: Optional[dict] = None,
+    metadata: Optional[dict] = None,
 ) -> AuditLog:
     """
     Append an audit record with SHA-256 hash chaining.
@@ -46,13 +46,13 @@ def write_audit_event(
         timestamp=datetime.now(timezone.utc),
         model_version=model_version,
         risk_score=risk_score,
-        details=details or {},
-        prev_hash=_in_memory_prev_hash,
+        metadata=metadata or {},
+        previous_hash=_in_memory_prev_hash,
     )
     db.add(record)
     db.flush()
-    record.record_hash = record.compute_hash()
-    _in_memory_prev_hash = record.record_hash
+    record.current_hash = record.compute_hash()
+    _in_memory_prev_hash = record.current_hash
     db.commit()
     logger.debug(f"Audit event written: {event_type} | account={account_id}")
     return record

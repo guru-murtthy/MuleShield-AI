@@ -1,6 +1,6 @@
 # MuleShield AI
 
-## AI-Powered Mule Account Detection & Fraud Prevention System
+## AI-Powered Mule Account Detection & Fraud Prevention System for PSBs
 
 **Built for the Bank of India Hackathon 2026 — IIT Hyderabad**
 
@@ -12,11 +12,26 @@
 
 ---
 
-MuleShield AI is an enterprise-grade, real-time fraud detection system designed specifically for Public Sector Banks in India. It detects **mule accounts** — accounts used to funnel stolen funds — by combining **six machine learning models** into a weighted ensemble that produces a **Risk Score from 0 to 1000** with full explainability.
+## Project Overview
 
-> **Problem:** Mule accounts are the backbone of financial fraud in India. With thousands of new accounts opened daily across PSBs, manual detection is impossible. Fraudsters use smurfing, layering, and structuring across multiple accounts to launder money undetected.
->
-> **Solution:** MuleShield AI ingests account feature vectors, scores them in real time using a parallelized 6-model ensemble, explains every decision via SHAP, generates regulatory STR drafts (goAML), and optionally auto-freezes critical accounts — all with an immutable SHA-256 chained audit trail.
+MuleShield AI is an enterprise-grade, real-time fraud detection platform purpose-built for **Public Sector Banks (PSBs)** in India. The system detects **mule accounts** — accounts exploited by criminals to funnel stolen funds — using advanced machine learning and explainable AI techniques.
+
+The platform ingests anonymized banking transaction features from the real **DataSet.csv** (9,082 rows × 3,924 features), trains a weighted ensemble of six ML models (XGBoost, LightGBM, CatBoost, Isolation Forest, PyTorch Autoencoder, and GNN), and produces a **Risk Score from 0 to 1,000** for every account under review. Investigators access findings through a React + TypeScript dashboard with SHAP explainability, while compliance officers receive pre-drafted **goAML STR reports** ready for FIU-IND submission.
+
+### The Problem
+
+Mule accounts are the backbone of financial fraud in India. With thousands of new accounts opened daily across PSBs, manual detection is impossible. Fraudsters use sophisticated techniques like smurfing, layering, and structuring across multiple accounts to launder money undetected, causing billions in losses annually.
+
+### The Solution
+
+MuleShield AI provides:
+- **Real-time Risk Scoring**: 0–1,000 risk scores with sub-500ms latency
+- **Full Explainability**: SHAP feature attributions and plain-language narratives for every decision
+- **Automated Prevention**: Auto-freeze HIGH/CRITICAL accounts with kill-switch override
+- **Regulatory Compliance**: Pre-drafted goAML STR reports and immutable SHA-256 audit chains
+- **One-Day Deployment**: Complete stack deployable via `docker compose up` from GitHub
+
+The entire system ships as a GitHub-ready repository with Docker Compose support, enabling any PSB to clone, configure, and deploy the prototype within a single working day.
 
 ---
 
@@ -68,34 +83,116 @@ MuleShield AI is an enterprise-grade, real-time fraud detection system designed 
 
 ## Architecture
 
+MuleShield AI implements a **10-layer fraud detection architecture** optimized for PSB deployment:
+
 ```
-┌──────────────┐     ┌──────────────────────────────────────┐     ┌──────────┐
-│  React UI    │────▶│          FastAPI Backend             │────▶│ SQLite   │
-│  Dashboard   │     │  ┌────────────────────────────────┐  │     │ Postgres │
-│              │     │  │  /api/v1/score                 │  │     │ (prod)   │
-│  • Alerts    │     │  │  /api/v1/alerts                │  │     └──────────┘
-│  • Account   │     │  │  /api/v1/action                │  │
-│    Detail    │     │  │  /api/v1/regulator/summary     │  │     ┌──────────┐
-│  • SHAP      │     │  │  /api/v1/audit                 │  │     │  Redis   │
-│    Charts    │     │  │  /api/v1/kill-switch           │  │     │  Cache   │
-│  • Freeze    │     │  └────────────────────────────────┘  │     └──────────┘
-│    Controls  │     │  ┌────────────────────────────────┐  │
-└──────────────┘     │  │   Ensemble Engine              │  │     ┌──────────┐
-                     │  │  ┌─────┐ ┌─────┐ ┌───────┐   │  │     │ MLflow   │
-                     │  │  │ XGB │ │ LGB │ │ CatB  │   │  │     │ Tracking │
-                     │  │  └─────┘ └─────┘ └───────┘   │  │     └──────────┘
-                     │  │  ┌─────┐ ┌─────┐ ┌───────┐   │  │
-                     │  │  │ IF  │ │ AE  │ │ GNN*  │   │  │     ┌──────────┐
-                     │  │  └─────┘ └─────┘ └───────┘   │  │     │Model     │
-                     │  │  *GNN: optional (graph data) │  │     │Artifacts │
-                     │  └────────────────────────────────┘  │     └──────────┘
-                     │  ┌────────────────────────────────┐  │
-                     │  │  SHAP Explainer (cached)       │  │
-                     │  │  Prevention Engine             │  │
-                     │  │  Audit Service (SHA-256 chain) │  │
-                     │  │  STR Generator (goAML)         │  │
-                     │  └────────────────────────────────┘  │
-                     └──────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│ LAYER 1: Presentation Layer                                        │
+│ ┌─────────────────────────────────────────────────────────────┐   │
+│ │  React 18 + TypeScript + Vite + Tailwind CSS Dashboard      │   │
+│ │  • Alert Queue (live-updating)  • Account Detail Panel      │   │
+│ │  • SHAP Waterfall Charts (D3)   • Relationship Graph (Cyto) │   │
+│ │  • Freeze Controls              • Regulator Portal View     │   │
+│ └─────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────┬───────────────────────────────────┘
+                                 │ HTTP REST API
+┌────────────────────────────────▼───────────────────────────────────┐
+│ LAYER 2: API Gateway Layer                                         │
+│ ┌─────────────────────────────────────────────────────────────┐   │
+│ │  FastAPI 0.111 with OpenAPI Docs                            │   │
+│ │  /score  /alerts  /action  /regulator  /audit  /kill-switch │   │
+│ │  CORS Middleware • Input Validation • Token Auth            │   │
+│ └─────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────┬───────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼───────────────────────────────────┐
+│ LAYER 3: Business Logic Layer                                      │
+│ ┌────────────────┐  ┌──────────────────┐  ┌──────────────────┐   │
+│ │ Model Service  │  │ Prevention Engine│  │  Audit Service   │   │
+│ │ • Load models  │  │ • Soft Freeze    │  │ • SHA-256 chain  │   │
+│ │ • Score cache  │  │ • Hard Freeze    │  │ • Event logging  │   │
+│ │ • SHAP cache   │  │ • Kill Switch    │  │ • Immutable log  │   │
+│ └────────────────┘  └──────────────────┘  └──────────────────┘   │
+└────────────────────────────────┬───────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼───────────────────────────────────┐
+│ LAYER 4: ML Scoring Layer                                          │
+│ ┌─────────────────────────────────────────────────────────────┐   │
+│ │  Risk Scorer (0–1000 Risk Score + Risk Band)                │   │
+│ │  • Score Computation  • Pattern Detection  • STR Generator  │   │
+│ └─────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────┬───────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼───────────────────────────────────┐
+│ LAYER 5: Explainability Layer                                      │
+│ ┌─────────────────────────────────────────────────────────────┐   │
+│ │  SHAP 0.45 TreeExplainer (cached at startup)                │   │
+│ │  • Top-10 Feature Attributions  • NLP Narrative Generator   │   │
+│ └─────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────┬───────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼───────────────────────────────────┐
+│ LAYER 6: Ensemble Prediction Layer                                 │
+│ ┌───────────────────────────────────────────────────────────┐     │
+│ │  6-Model Weighted Ensemble (Parallel ThreadPool Execution) │     │
+│ │  ┌─────────┐ ┌──────────┐ ┌──────────┐                    │     │
+│ │  │ XGBoost │ │ LightGBM │ │ CatBoost │  Supervised Models │     │
+│ │  │ (30%)   │ │  (25%)   │ │  (15%)   │                    │     │
+│ │  └─────────┘ └──────────┘ └──────────┘                    │     │
+│ │  ┌─────────┐ ┌──────────┐ ┌──────────┐                    │     │
+│ │  │Isolation│ │Autoencoder│ │   GNN   │  Anomaly Detection│     │
+│ │  │ Forest  │ │ (PyTorch) │ │(PyG-opt)│                    │     │
+│ │  │ (15%)   │ │   (10%)   │ │  (5%)   │                    │     │
+│ │  └─────────┘ └──────────┘ └──────────┘                    │     │
+│ └───────────────────────────────────────────────────────────┘     │
+└────────────────────────────────┬───────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼───────────────────────────────────┐
+│ LAYER 7: Data Preprocessing Layer                                  │
+│ ┌─────────────────────────────────────────────────────────────┐   │
+│ │  Data Preprocessor                                           │   │
+│ │  • Missing Value Imputation (median, vectorized)            │   │
+│ │  • StandardScaler Normalization                             │   │
+│ │  • Feature Selection (drop >70% missing, constant columns)  │   │
+│ └─────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────┬───────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼───────────────────────────────────┐
+│ LAYER 8: Caching Layer                                             │
+│ ┌──────────────┐  ┌──────────────────────────────────────────┐   │
+│ │ Redis Cache  │  │ In-Memory Fallback                        │   │
+│ │ • Score TTL: │  │ • Model artifacts cached at startup       │   │
+│ │   60 seconds │  │ • SHAP TreeExplainer (singleton)          │   │
+│ │ • Sub-5ms    │  │ • Audit hash chain (last record cached)   │   │
+│ └──────────────┘  └──────────────────────────────────────────┘   │
+└────────────────────────────────┬───────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼───────────────────────────────────┐
+│ LAYER 9: Persistence Layer                                         │
+│ ┌──────────┐  ┌─────────┐  ┌────────┐  ┌──────────────────┐      │
+│ │ SQLite   │  │ Neo4j   │  │ MLflow │  │ Prometheus TSDB  │      │
+│ │ (Dev) or │  │ Graph DB│  │Registry│  │ (Metrics)        │      │
+│ │PostgreSQL│  │(optional│  │ Models │  │                  │      │
+│ │  (Prod)  │  │  graph) │  │Artifacts│  │                  │      │
+│ │          │  │         │  │        │  │                  │      │
+│ │• Scores  │  │• Account│  │•Trained│  │•Request Counters │      │
+│ │• Actions │  │  Edges  │  │ Models │  │•Latency Histos   │      │
+│ │• Audit   │  │• Txn    │  │•Scalers│  │•Alert Gauges     │      │
+│ │  Log     │  │  Graph  │  │•Metrics│  │                  │      │
+│ └──────────┘  └─────────┘  └────────┘  └──────────────────┘      │
+└────────────────────────────────┬───────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼───────────────────────────────────┐
+│ LAYER 10: Training & Monitoring Layer                              │
+│ ┌────────────────────────────┐  ┌────────────────────────────┐    │
+│ │  Training Pipeline         │  │  Monitoring Stack          │    │
+│ │  scripts/train.py          │  │  Prometheus + Grafana      │    │
+│ │  • Load DataSet.csv        │  │  • Request Metrics         │    │
+│ │  • Train 6 models (||)     │  │  • Latency Dashboards      │    │
+│ │  • Evaluate (AUC≥0.80)     │  │  • Alert Heatmaps          │    │
+│ │  • Register to MLflow      │  │  • Audit Alerts (90% cap)  │    │
+│ └────────────────────────────┘  └────────────────────────────┘    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ### ML Ensemble Weights
@@ -131,51 +228,48 @@ MuleShield AI is an enterprise-grade, real-time fraud detection system designed 
 
 ## Quick Start
 
-### Prerequisites
+Deploy the complete MuleShield AI stack with Docker Compose in **5 steps**:
 
-- Python 3.10+
-- Node.js 18+
-- Redis (optional — falls back to in-process cache)
-
-### 1. Clone & Setup Backend
-
+### Step 1: Clone and Setup
 ```bash
 git clone https://github.com/guru-murtthy/MuleShield-AI.git
-cd MuleShield-AI/backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+cd MuleShield-AI
+cp .env.example .env  # Configure environment variables (optional)
 ```
 
-### 2. Train the Model
-
+### Step 2: Add Training Data
 ```bash
-# Provide your DataSet.csv path (9,082 x 3,924 anonymized feature matrix)
-python scripts/train.py --data /path/to/DataSet.csv
-
-# With MLflow tracking (optional)
-python scripts/train.py --data /path/to/DataSet.csv --mlflow-uri http://localhost:5000
+# Copy your DataSet.csv (9,082 x 3,924 anonymized features) to the data directory
+mkdir -p data
+cp /path/to/DataSet.csv data/
 ```
 
-Training auto-detects the label column, handles NaN imputation (vectorized), drops high-missing/constant columns, splits stratified 80/20, trains all 5 models in parallel, and saves artifacts to `./artifacts/`.
-
-### 3. Start the API Server
-
+### Step 3: Start All Services
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+docker compose up --build
+# Starts: FastAPI backend, React frontend, Redis, Neo4j, MLflow, Prometheus, Grafana
+# Training pipeline runs automatically if no models exist
 ```
 
-The API auto-loads trained models on startup.
-
-### 4. Start the Frontend Dashboard
-
+### Step 4: Verify Deployment
 ```bash
-cd frontend
-npm install
-npm run start
+# Wait for all services to report healthy (typically ~120 seconds)
+docker compose ps
+# All services should show status: "healthy" or "Up"
 ```
 
-Opens at `http://localhost:5173`. The dashboard auto-connects to the API at `http://localhost:8000`.
+### Step 5: Access the System
+- **Dashboard**: http://localhost:3000 (Investigator UI)
+- **API Docs**: http://localhost:8000/docs (OpenAPI Swagger)
+- **MLflow**: http://localhost:5000 (Model registry)
+- **Grafana**: http://localhost:3001 (Monitoring, admin/admin)
+
+**First-time setup:** If models don't exist, the training pipeline automatically runs against `data/DataSet.csv` during Step 3. This takes ~10 minutes for the 6-model ensemble.
+
+**Manual training:** To retrain models anytime:
+```bash
+docker compose exec backend python scripts/train.py --data /data/DataSet.csv
+```
 
 ---
 
@@ -218,20 +312,97 @@ Prometheus metrics endpoint.
 
 ---
 
-## Configuration
+## Configuration Reference
 
-Set via environment variables (`.env` file in `backend/`):
+Configure MuleShield AI via environment variables in the `.env` file (backend root):
+
+### Core Settings
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `sqlite:///./muleshield.db` | Database connection string |
-| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection string |
-| `MODEL_ARTIFACTS_DIR` | `./artifacts` | Trained model storage |
-| `SCORE_CACHE_TTL` | `60` | Score cache TTL (seconds) |
-| `REGULATOR_TOKEN` | `regulator-secret-token` | API auth for regulator endpoint |
-| `KILL_SWITCH_ACTIVE` | `False` | Global kill switch flag |
-| `XGBOOST_WEIGHT` | `0.30` | Ensemble weight overrides |
-| `DEBUG` | `False` | Debug mode |
+| `DATABASE_URL` | `sqlite:///./muleshield.db` | Database connection string. Use `postgresql://user:pass@host:5432/db` for production. |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis cache connection string. System falls back to in-memory cache if unavailable. |
+| `MODEL_ARTIFACTS_DIR` | `./artifacts` | Directory for trained model storage (scalers, models, imputers). |
+| `DATASET_PATH` | `./data/DataSet.csv` | Path to training dataset (9,082 × 3,924 anonymized features). |
+
+### ML Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `XGBOOST_WEIGHT` | `0.30` | XGBoost ensemble weight (primary gradient booster). |
+| `LIGHTGBM_WEIGHT` | `0.25` | LightGBM ensemble weight (leaf-wise booster). |
+| `CATBOOST_WEIGHT` | `0.15` | CatBoost ensemble weight (ordered boosting). |
+| `ISOLATION_FOREST_WEIGHT` | `0.15` | Isolation Forest weight (unsupervised anomaly). |
+| `AUTOENCODER_WEIGHT` | `0.10` | Autoencoder weight (reconstruction error). |
+| `GNN_WEIGHT` | `0.05` | Graph Neural Network weight (optional, requires Neo4j graph data). |
+
+### Performance Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SCORE_CACHE_TTL` | `60` | Score result cache TTL in seconds (Redis/in-memory). |
+| `DB_POOL_SIZE` | `10` | SQLAlchemy connection pool size. |
+| `DB_MAX_OVERFLOW` | `20` | Maximum overflow connections beyond pool size. |
+| `API_WORKERS` | `4` | Number of Uvicorn worker processes. |
+
+### Security Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REGULATOR_TOKEN` | `regulator-secret-token` | Bearer token for `/api/v1/regulator/*` endpoints. Change in production! |
+| `CORS_ORIGINS` | `http://localhost:3000` | Allowed CORS origins (comma-separated). Add production frontend URL. |
+| `JWT_SECRET_KEY` | (none) | JWT signing key for analyst authentication (future feature). |
+
+### Feature Flags
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KILL_SWITCH_ACTIVE` | `False` | Global kill switch for automated freeze actions. Set `True` to disable all auto-freezes. |
+| `AUTO_FREEZE_ENABLED` | `True` | Enable/disable automatic freeze for CRITICAL risk band accounts. |
+| `STR_GENERATION_ENABLED` | `True` | Enable/disable automatic goAML STR draft generation. |
+| `DEBUG` | `False` | Enable debug logging and FastAPI auto-reload. |
+
+### Monitoring Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PROMETHEUS_ENABLED` | `True` | Expose `/metrics` endpoint for Prometheus scraping. |
+| `GRAFANA_ADMIN_PASSWORD` | `admin` | Grafana admin password (change in production!). |
+| `AUDIT_RETENTION_DAYS` | `1825` | Audit log retention period (5 years = 1825 days, regulatory requirement). |
+
+### Example `.env` File
+
+```env
+# Database
+DATABASE_URL=postgresql://muleshield:secure_password@postgres:5432/muleshield_prod
+REDIS_URL=redis://redis:6379/0
+
+# ML Models
+XGBOOST_WEIGHT=0.30
+LIGHTGBM_WEIGHT=0.25
+CATBOOST_WEIGHT=0.15
+
+# Security
+REGULATOR_TOKEN=RBI-FIU-IND-SECURE-TOKEN-2026
+CORS_ORIGINS=https://muleshield.bankname.in,https://dashboard.bankname.in
+
+# Performance
+SCORE_CACHE_TTL=60
+API_WORKERS=8
+
+# Features
+KILL_SWITCH_ACTIVE=False
+AUTO_FREEZE_ENABLED=True
+```
+
+**Production Checklist:**
+1. ✅ Change `REGULATOR_TOKEN` to a secure random value
+2. ✅ Use PostgreSQL for `DATABASE_URL` (not SQLite)
+3. ✅ Update `CORS_ORIGINS` with production frontend URL
+4. ✅ Set `DEBUG=False`
+5. ✅ Configure `GRAFANA_ADMIN_PASSWORD`
+6. ✅ Increase `API_WORKERS` based on CPU cores
+7. ✅ Enable SSL/TLS for Redis and PostgreSQL connections
 
 ---
 

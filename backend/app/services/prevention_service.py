@@ -27,7 +27,7 @@ def activate_kill_switch(db: Session, user_id: str) -> dict:
         db,
         event_type="kill_switch_activated",
         user_id=user_id,
-        details={"activated_at": datetime.now(timezone.utc).isoformat()},
+        metadata={"activated_at": datetime.now(timezone.utc).isoformat()},
     )
     logger.warning(f"KILL SWITCH ACTIVATED by user: {user_id}")
     return {"status": "kill_switch_activated", "activated_by": user_id}
@@ -70,7 +70,7 @@ def apply_action(
                 event_type="freeze_applied",
                 account_id=account_id,
                 user_id=analyst_id,
-                details={"action": action_type, "warning": "duplicate_action"},
+                metadata={"action": action_type, "warning": "duplicate_action"},
             )
             return {
                 "account_id": account_id,
@@ -84,7 +84,7 @@ def apply_action(
         account_id=account_id,
         action_type=action_type,
         status="removed" if action_type == "unfreeze" else "active",
-        analyst_id=analyst_id,
+        user_id=analyst_id,
     )
     db.add(db_action)
     db.commit()
@@ -96,7 +96,7 @@ def apply_action(
         account_id=account_id,
         user_id=analyst_id,
         model_version=model_version,
-        details={"action": action_type},
+        metadata={"action": action_type},
     )
 
     logger.info(f"Action {action_type} applied to account {account_id} by {analyst_id}")

@@ -1,0 +1,136 @@
+# ============================================================================
+# MuleShield AI Prometheus Configuration
+# Scrapes metrics from FastAPI backend and system components
+# ============================================================================
+
+global:
+  scrape_interval: 15s          # Scrape targets every 15 seconds
+  evaluation_interval: 15s      # Evaluate rules every 15 seconds
+  scrape_timeout: 10s
+  external_labels:
+    cluster: 'muleshield-ai'
+    environment: 'production'
+
+# Alertmanager configuration (optional, for production)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# Rule files for alerts (optional)
+# rule_files:
+#   - "/etc/prometheus/rules/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # ============================================================================
+  # MuleShield AI FastAPI Backend
+  # ============================================================================
+  - job_name: 'muleshield-backend'
+    static_configs:
+      - targets: ['backend:8000']
+        labels:
+          service: 'scoring-api'
+          component: 'backend'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # ============================================================================
+  # Prometheus Self-Monitoring
+  # ============================================================================
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          component: 'monitoring'
+
+  # ============================================================================
+  # Redis Exporter (optional - requires redis_exporter sidecar)
+  # ============================================================================
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+  #       labels:
+  #         service: 'redis'
+  #         component: 'cache'
+
+  # ============================================================================
+  # Neo4j Metrics (optional - requires neo4j metrics plugin)
+  # ============================================================================
+  # - job_name: 'neo4j'
+  #   static_configs:
+  #     - targets: ['neo4j:2004']
+  #       labels:
+  #         service: 'neo4j'
+  #         component: 'graph-db'
+
+  # ============================================================================
+  # MLflow (optional - if metrics exposed)
+  # ============================================================================
+  # - job_name: 'mlflow'
+  #   static_configs:
+  #     - targets: ['mlflow:5000']
+  #       labels:
+  #         service: 'mlflow'
+  #         component: 'model-registry'
+
+# ============================================================================
+# Alert Rules (inline example - move to rule_files in production)
+# ============================================================================
+# Example alert rules - uncomment and customize for production use
+# groups:
+#   - name: muleshield_alerts
+#     interval: 30s
+#     rules:
+#       # High request latency
+#       - alert: HighScoreLatency
+#         expr: muleshield_score_latency_seconds{quantile="0.95"} > 0.5
+#         for: 5m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "High scoring latency detected"
+#           description: "95th percentile latency is {{ $value }}s (threshold: 0.5s)"
+#
+#       # High error rate
+#       - alert: HighErrorRate
+#         expr: rate(muleshield_requests_total{status=~"5.."}[5m]) > 0.05
+#         for: 5m
+#         labels:
+#           severity: critical
+#         annotations:
+#           summary: "High error rate detected"
+#           description: "Error rate is {{ $value | humanizePercentage }} over 5 minutes"
+#
+#       # Audit storage warning
+#       - alert: AuditStorageWarning
+#         expr: (1 - (node_filesystem_avail_bytes{mountpoint="/app/db"} / node_filesystem_size_bytes{mountpoint="/app/db"})) > 0.90
+#         for: 10m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "Audit log storage usage high"
+#           description: "Disk usage is above 90% for audit logs"
+#
+#       # Backend service down
+#       - alert: BackendDown
+#         expr: up{job="muleshield-backend"} == 0
+#         for: 1m
+#         labels:
+#           severity: critical
+#         annotations:
+#           summary: "MuleShield backend is down"
+#           description: "The scoring API is not responding"
+#
+#       # High critical alerts
+#       - alert: HighCriticalAlerts
+#         expr: muleshield_alerts_active{risk_band="CRITICAL"} > 100
+#         for: 15m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "High number of critical risk alerts"
+#           description: "{{ $value }} critical risk accounts detected"
